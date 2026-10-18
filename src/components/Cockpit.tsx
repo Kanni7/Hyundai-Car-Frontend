@@ -9,6 +9,7 @@ import { AmbientFilter } from './AmbientFilter';
 import { Airflow } from './Airflow';
 import { Windshield } from './Windshield';
 import { Infotainment, type VoicePhase } from './Infotainment';
+import { DrawnCabin } from '../drawn/DrawnCabin';
 
 interface Props {
   car: CarState;
@@ -19,8 +20,10 @@ interface Props {
   reserveBottom: number;
   focused: boolean;
   onToggleFocus: () => void;
+  onMic: () => void;
 }
 
+const COMPARE = new URLSearchParams(window.location.search).get('compare');
 const poly = (pts: XY[]) => `polygon(${pts.map(([x, y]) => `${x}px ${y}px`).join(',')})`;
 const at = ([x, y]: XY, extra?: CSSProperties): CSSProperties => ({ left: x, top: y, ...extra });
 
@@ -34,7 +37,7 @@ function useViewport() {
   return vp;
 }
 
-export function Cockpit({ car, scene, toast, voice, onIntent, reserveBottom, focused, onToggleFocus }: Props) {
+export function Cockpit({ car, scene, toast, voice, onIntent, reserveBottom, focused, onToggleFocus, onMic }: Props) {
   const vp = useViewport();
 
   // Fill the width; keep at least (viewport - dock) of height; crop sides around the focal point.
@@ -59,6 +62,13 @@ export function Cockpit({ car, scene, toast, voice, onIntent, reserveBottom, foc
   const amb = car.ambient;
   const ambientColor = amb.on ? AMBIENT_RGB[amb.color] : AMBIENT_RGB.off;
   const c = car.climate;
+  const drawn = scene.kind === 'drawn';
+  const airflow = <Airflow scene={scene} on={c.on && car.ignition !== 'off'} fan={c.fan} temp={c.temp} />;
+  const screen = (
+    <div className="screen" onDoubleClick={onToggleFocus} style={{ transform: screenTransform, width: scene.screen.ui.w, height: scene.screen.ui.h, borderRadius: scene.screen.radius }}>
+      <Infotainment car={car} toast={toast} voice={voice} onIntent={onIntent} width={scene.screen.ui.w} height={scene.screen.ui.h} />
+    </div>
+  );
 
   return (
     <div className="viewport">
@@ -66,50 +76,55 @@ export function Cockpit({ car, scene, toast, voice, onIntent, reserveBottom, foc
         style={{ width: scene.width, height: scene.height, transform: `translate(${left}px, ${top}px) scale(${s})` }}>
         <div className="cabin" style={{ width: scene.width, height: scene.height }}>
           <img className="layer" src={scene.src} alt="Hyundai Verna interior" draggable={false} />
-          <AmbientFilter id={`amb-${scene.id}`} color={amb.party ? AMBIENT_RGB.red : ambientColor} gain={amb.on ? amb.brightness : 1} threshold={scene.ambient.threshold} />
-          {/* Party mode spins the hue of the already-filtered layer on the GPU instead of re-running the filter. */}
-          <div className={`layer ambient ${amb.on && amb.party ? 'party' : ''}`}>
-            <img className="layer" src={scene.src} alt="" draggable={false}
-              style={{ filter: `url(#amb-${scene.id})`, clipPath: poly(scene.ambient.clip) }} />
-          </div>
+          {!drawn && (
+            <>
+              <AmbientFilter id={`amb-${scene.id}`} color={amb.party ? AMBIENT_RGB.red : ambientColor} gain={amb.on ? amb.brightness : 1} threshold={scene.ambient.threshold} />
+              {/* Party mode spins the hue of the already-filtered layer on the GPU instead of re-running the filter. */}
+              <div className={`layer ambient ${amb.on && amb.party ? 'party' : ''}`}>
+                <img className="layer" src={scene.src} alt="" draggable={false}
+                  style={{ filter: `url(#amb-${scene.id})`, clipPath: poly(scene.ambient.clip) }} />
+              </div>
+            </>
+          )}
 
           {scene.windshield.headlight && (
             <div className={`headlight ${car.headlights ? 'on' : ''}`} style={ellipseStyle(scene.windshield.headlight)} />
           )}
           <div className={`sunlight ${car.sunroof ? 'on' : ''} ${scene.id}`} />
           <Windshield scene={scene} mode={car.wipers} />
-          <Airflow scene={scene} on={c.on} fan={c.fan} temp={c.temp} />
 
-          {scene.seat && (
-            <div className={`seat-glow lvl-${car.seats.passenger}`} style={ellipseStyle(scene.seat)} />
-          )}
-
-          {scene.cluster && <Cluster car={car} cfg={scene.cluster} />}
-
-          {scene.climate.kind === 'lcd' ? (
+          {drawn ? (
             <>
-              <LcdTemp pos={scene.climate.left} size={scene.climate.size} value={c.temp} on={c.on} label="Cabin temperature"
-                onStep={(d) => onIntent({ type: 'climate.setTemp', value: c.temp + d })} />
-              {/* Single-zone AC: the second display shows blower speed instead of a duplicate temperature. */}
-              <LcdFan pos={scene.climate.right} size={scene.climate.size} fan={c.on ? c.fan : 0}
-                onStep={(d) => onIntent({ type: 'climate.fan', delta: d })} />
+              <DrawnCabin car={car} onIntent={onIntent} onMic={onMic} airflow={airflow} screen={screen} />
+              {/* Dev aid: ?compare=split or ?compare=overlay lays the source photo over the drawing */}
+              {COMPARE && <img className={`layer compare-${COMPARE}`} src={scene.src} alt="" />}
             </>
           ) : (
-            <div className="lcd-chip" style={at(scene.climate.at, { width: scene.climate.w, height: scene.climate.h })}>
-              <span>{c.on ? `${c.temp.toFixed(1)}°` : 'OFF'}</span>
-              <i>{Array.from({ length: 8 }, (_, k) => <b key={k} className={c.on && k < c.fan ? 'on' : ''} />)}</i>
-            </div>
+            <>
+              {airflow}
+              {scene.seat && <div className={`seat-glow lvl-${car.seats.passenger}`} style={ellipseStyle(scene.seat)} />}
+              {scene.cluster && <Cluster car={car} cfg={scene.cluster} />}
+              {scene.climate.kind === 'lcd' ? (
+                <>
+                  <LcdTemp pos={scene.climate.left} size={scene.climate.size} value={c.temp} on={c.on} label="Cabin temperature"
+                    onStep={(d) => onIntent({ type: 'climate.setTemp', value: c.temp + d })} />
+                  {/* Single-zone AC: the second display shows blower speed instead of a duplicate temperature. */}
+                  <LcdFan pos={scene.climate.right} size={scene.climate.size} fan={c.on ? c.fan : 0}
+                    onStep={(d) => onIntent({ type: 'climate.fan', delta: d })} />
+                </>
+              ) : (
+                <div className="lcd-chip" style={at(scene.climate.at, { width: scene.climate.w, height: scene.climate.h })}>
+                  <span>{c.on ? `${c.temp.toFixed(1)}°` : 'OFF'}</span>
+                  <i>{Array.from({ length: 8 }, (_, k) => <b key={k} className={c.on && k < c.fan ? 'on' : ''} />)}</i>
+                </div>
+              )}
+              <button className={`hazard-btn ${car.hazard ? 'on' : ''}`} style={at(scene.hazard)}
+                onClick={() => onIntent({ type: 'lights.hazard', on: !car.hazard })} aria-label="Hazard lights" title="Hazard lights" />
+              {screen}
+              <button className="horn" style={{ left: scene.horn.cx, top: scene.horn.cy, width: scene.horn.r * 2, height: scene.horn.r * 2 }}
+                onClick={() => carAudio.horn()} aria-label="Horn" title="Horn" />
+            </>
           )}
-
-          <button className={`hazard-btn ${car.hazard ? 'on' : ''}`} style={at(scene.hazard)}
-            onClick={() => onIntent({ type: 'lights.hazard', on: !car.hazard })} aria-label="Hazard lights" title="Hazard lights" />
-
-          <div className="screen" onDoubleClick={onToggleFocus} style={{ transform: screenTransform, width: scene.screen.ui.w, height: scene.screen.ui.h, borderRadius: scene.screen.radius }}>
-            <Infotainment car={car} toast={toast} voice={voice} onIntent={onIntent} width={scene.screen.ui.w} height={scene.screen.ui.h} />
-          </div>
-
-          <button className="horn" style={{ left: scene.horn.cx, top: scene.horn.cy, width: scene.horn.r * 2, height: scene.horn.r * 2 }}
-            onClick={() => carAudio.horn()} aria-label="Horn" title="Horn" />
         </div>
       </div>
       <div className="viewport-fade" style={{ top: cabinBottom - 160, opacity: focused ? 0 : 1 }} />

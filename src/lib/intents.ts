@@ -16,7 +16,13 @@ export const SUGGESTIONS = [
   'Thak gaya hoon',
   'एसी बाईस पर कर दो',
   'Set temperature to 24',
-  'Night mode / day mode',
+  'Gaadi start karo',
+  'Gear D mein daalo',
+  'Left indicator do',
+  'Andar ki light on karo',
+  'Darwaze lock karo',
+  'Sheesha saaf karo',
+  'Photo view',
 ];
 
 export function describeIntent(i: Intent): string {

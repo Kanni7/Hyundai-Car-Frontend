@@ -50,10 +50,7 @@ export function VoiceDock({ phase, interim, reply, supported, error, speechLang,
 
       <div className="suggest" role="list">
         {SUGGESTIONS.map((s) => (
-          <button key={s} role="listitem" onClick={() => {
-            if (s.includes(' / ')) onSend(s.includes('Night') ? 'night mode' : 'day mode', 'chip');
-            else onSend(s, 'chip');
-          }}>{s}</button>
+          <button key={s} role="listitem" onClick={() => onSend(s, 'chip')}>{s}</button>
         ))}
       </div>
 

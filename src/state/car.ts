@@ -53,8 +53,8 @@ export const COLOR_LABEL: Record<AmbientColor, { en: string; hi: string; css: st
 };
 
 export const initialCar: CarState = {
-  scene: 'night',
-  climate: { on: true, temp: 22, fan: 3, auto: false },
+  scene: 'live',
+  climate: { on: true, temp: 22, fan: 3, auto: false, recirc: false, defrost: false },
   media: { playing: false, radio: false, freq: 93.5, genre: 'lofi', track: 0, volume: 12, muted: false },
   ambient: { on: true, color: 'blue', brightness: 1, party: false },
   wipers: 'off',
@@ -66,10 +66,19 @@ export const initialCar: CarState = {
   driveMode: 'normal',
   headlights: false,
   hazard: false,
+  ignition: 'acc',
+  gear: 'P',
+  indicator: 'off',
+  cabinLight: false,
+  locked: false,
+  autoHold: false,
   screen: 'home',
   fuel: 62,
   range: 478,
 };
+
+export const engineOn = (s: CarState) => s.ignition === 'on';
+export const powered = (s: CarState) => s.ignition !== 'off';
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const fmt = (t: number) => `${t.toFixed(1).replace(/\.0$/, '')}°C`;
@@ -130,6 +139,24 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
       return {
         state: { ...s, climate: { ...c, on: true, auto: false, fan: v } },
         reply: r(`Fan speed ${v}.`, `Fan speed ${v} kar di.`, { icon: 'fan', label: 'Fan speed', value: `${v} / ${FAN_MAX}` }),
+      };
+    }
+    case 'climate.recirc': {
+      const on = it.on ?? !c.recirc;
+      return {
+        state: { ...s, climate: { ...c, recirc: on } },
+        reply: on
+          ? r('Recirculation on. Keeping outside air out.', 'Recirculation chalu, bahar ki hawa band.', { icon: 'fan', label: 'Recirculation', value: 'On' })
+          : r('Fresh air mode on.', 'Bahar ki taazi hawa aane di.', { icon: 'fan', label: 'Recirculation', value: 'Off' }),
+      };
+    }
+    case 'climate.defrost': {
+      const on = it.on ?? !c.defrost;
+      return {
+        state: { ...s, climate: { ...c, on: on || c.on, defrost: on, fan: on ? Math.max(c.fan, 5) : c.fan } },
+        reply: on
+          ? r('Front defrost on. Clearing the windshield.', 'Sheesha saaf kar raha hoon, defrost on.', { icon: 'climate', label: 'Defrost', value: 'On' })
+          : r('Defrost off.', 'Defrost band.', { icon: 'climate', label: 'Defrost', value: 'Off' }),
       };
     }
     case 'climate.auto':
@@ -328,8 +355,82 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
     case 'scene':
       return {
         state: { ...s, scene: it.scene },
-        reply: it.scene === 'night' ? r('Switching to the night view.', 'Night view on.') : r('Switching to the day view.', 'Day view on.'),
+        reply: {
+          live: r('Switching to the live cockpit.', 'Live cockpit view on.'),
+          night: r('Switching to the night photo.', 'Night photo view on.'),
+          day: r('Switching to the day photo.', 'Day photo view on.'),
+        }[it.scene],
       };
+    case 'ignition': {
+      const from = s.ignition;
+      const to = it.mode;
+      if (from === to) {
+        return { state: s, reply: {
+          on: r('The engine is already running.', 'Gaadi pehle se start hai.'),
+          acc: r('Accessory mode is already on.', 'ACC mode pehle se on hai.'),
+          off: r('The car is already off.', 'Gaadi pehle se band hai.'),
+        }[to] };
+      }
+      const off = to === 'off';
+      const state: CarState = {
+        ...s,
+        ignition: to,
+        gear: 'P',
+        media: off ? { ...s.media, playing: false } : s.media,
+        phone: off ? null : s.phone,
+        indicator: off ? 'off' : s.indicator,
+      };
+      const toast = { icon: 'power' as const, label: 'Ignition', value: to.toUpperCase() };
+      if (to === 'on') return { state, reply: r('Engine started. Welcome aboard!', 'Gaadi start ho gayi. Swagat hai!', toast) };
+      if (to === 'acc') {
+        return { state, reply: from === 'on'
+          ? r('Engine off. Accessories stay on.', 'Engine band, accessories chalu hain.', toast)
+          : r('Accessory mode: electronics on, engine off.', 'ACC mode: engine band, baaki sab chalu.', toast) };
+      }
+      return { state, reply: r('Car switched off.', 'Gaadi poori tarah band kar di.', toast) };
+    }
+    case 'rev':
+      return {
+        state: s,
+        reply: engineOn(s) ? r('Vroom! Revving the engine.', 'Vroom! Engine rev kar raha hoon.') : r('Start the engine first.', 'Pehle gaadi start kijiye.'),
+      };
+    case 'gear': {
+      if (!engineOn(s) && it.gear !== 'P') {
+        return { state: s, reply: r('Start the engine first.', 'Pehle gaadi start kijiye.') };
+      }
+      const text = {
+        P: ['Gear in Park.', 'Gear P mein, gaadi park hai.'],
+        R: ['Reverse. Please check behind you.', 'Reverse mein daal diya, peeche dekh lijiye.'],
+        N: ['Gear in Neutral.', 'Neutral mein daal diya.'],
+        D: ['Gear in Drive.', 'Gear D mein daal diya.'],
+      }[it.gear];
+      return { state: { ...s, gear: it.gear }, reply: r(text[0], text[1], { icon: 'drive', label: 'Gear', value: it.gear }) };
+    }
+    case 'indicator': {
+      const state = { ...s, indicator: it.dir };
+      if (it.dir === 'off') return { state, reply: r('Indicator off.', 'Indicator band.') };
+      return { state, reply: it.dir === 'left' ? r('Left indicator on.', 'Left indicator chalu.') : r('Right indicator on.', 'Right indicator chalu.') };
+    }
+    case 'lights.cabin':
+      return {
+        state: { ...s, cabinLight: it.on },
+        reply: it.on ? r('Cabin light on.', 'Andar ki light jala di.', { icon: 'light', label: 'Cabin light', value: 'On' })
+          : r('Cabin light off.', 'Andar ki light band kar di.', { icon: 'light', label: 'Cabin light', value: 'Off' }),
+      };
+    case 'doors.lock':
+      return {
+        state: { ...s, locked: it.locked },
+        reply: it.locked ? r('Doors locked.', 'Darwaze lock kar diye.', { icon: 'lock', label: 'Doors', value: 'Locked' })
+          : r('Doors unlocked.', 'Darwaze unlock kar diye.', { icon: 'lock', label: 'Doors', value: 'Unlocked' }),
+      };
+    case 'autohold': {
+      const on = it.on ?? !s.autoHold;
+      return {
+        state: { ...s, autoHold: on },
+        reply: on ? r('Auto Hold on.', 'Auto Hold chalu.', { icon: 'drive', label: 'Auto Hold', value: 'On' })
+          : r('Auto Hold off.', 'Auto Hold band.', { icon: 'drive', label: 'Auto Hold', value: 'Off' }),
+      };
+    }
     case 'screen': {
       const name = { home: 'Home', nav: 'Navigation', media: 'Media', climate: 'Climate', phone: 'Phone', vehicle: 'Vehicle' }[it.page];
       return { state: { ...s, screen: it.page }, reply: r(`Opening ${name}.`, `${name} screen khol di.`) };
@@ -364,10 +465,23 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
   }
 }
 
+const NEEDS_POWER = new Set<Intent['type']>([
+  'climate.setTemp', 'climate.adjustTemp', 'climate.power', 'climate.fan', 'climate.auto', 'climate.recirc', 'climate.defrost',
+  'media.play', 'media.skip', 'media.volume', 'ambient.color', 'ambient.power', 'ambient.brightness',
+  'mood', 'nav.start', 'phone.call', 'screen', 'seat.vent',
+]);
+
 export function runIntents(state: CarState, intents: Intent[], lang: Lang) {
   let s = state;
   const replies: Reply[] = [];
   for (const it of intents) {
+    // Electronics need power: wake the car into ACC rather than ignoring the request.
+    const turningSomethingOff = (it.type === 'climate.power' || it.type === 'ambient.power') && !it.on;
+    if (s.ignition === 'off' && NEEDS_POWER.has(it.type) && !turningSomethingOff) {
+      const wake = applyIntent(s, { type: 'ignition', mode: 'acc' });
+      s = wake.state;
+      replies.push(wake.reply);
+    }
     const out = applyIntent(s, it);
     s = out.state;
     replies.push(out.reply);

@@ -1,11 +1,15 @@
 // Per-photo calibration. All coordinates are in the source image's natural pixels,
 // so overlays line up exactly once the stage is scaled to the viewport.
 
+import type { SceneId } from './types';
+
 export type XY = [number, number];
 export interface Ellipse { cx: number; cy: number; rx: number; ry: number }
 
 export interface SceneConfig {
-  id: 'night' | 'day';
+  id: SceneId;
+  /** 'photo' = overlays on a photograph; 'drawn' = the cabin is rendered in SVG, the photo only shows through the glass. */
+  kind: 'photo' | 'drawn';
   label: string;
   src: string;
   width: number;
@@ -27,52 +31,58 @@ export interface SceneConfig {
   horn: { cx: number; cy: number; r: number };
 }
 
-export const SCENES: Record<SceneConfig['id'], SceneConfig> = {
-  night: {
-    id: 'night',
-    label: 'Night drive',
-    src: '/images/verna-night.webp',
-    width: 1933,
-    height: 814,
-    focusX: 0.74,
-    focus: [985, 262, 1395, 480],
-    screen: { quad: [[1022, 290], [1334, 293], [1331, 410], [1025, 406]], ui: { w: 1080, h: 404 }, radius: 18 },
-    cluster: {
-      speed: [1504, 362],
-      info: [1682, 367],
-      tint: { cx: 1590, cy: 365, rx: 168, ry: 62 },
-      arrows: [[1478, 330], [1712, 330]],
-    },
-    climate: { kind: 'lcd', left: [1080, 527], right: [1212, 535], size: 13 },
-    ambient: {
-      clip: [[0, 310], [600, 300], [752, 252], [1884, 278], [1933, 278], [1933, 814], [0, 814]],
-      threshold: 0.15,
-    },
-    vents: [
-      [1000, 455, 1120, 456],
-      [1170, 461, 1300, 463],
-      [720, 410, 955, 413],
-      [1830, 425, 1920, 428],
-    ],
-    windshield: {
-      clip: [[600, 0], [1884, 0], [1884, 278], [1500, 268], [1000, 262], [752, 252]],
-      holes: [
-        { cx: 1572, cy: 465, rx: 243, ry: 226 },
-        { cx: 1075, cy: 25, rx: 128, ry: 38 },
-      ],
-      pivots: [
-        { x: 990, y: 295, len: 560 },
-        { x: 1460, y: 300, len: 600 },
-      ],
-      headlight: { cx: 1320, cy: 262, rx: 560, ry: 55 },
-    },
-    hazard: [1147, 463],
-    seat: { cx: 590, cy: 792, rx: 290, ry: 70 },
-    horn: { cx: 1557, cy: 478, r: 66 },
+const NIGHT: SceneConfig = {
+  id: 'night',
+  kind: 'photo',
+  label: 'Night photo',
+  src: '/images/verna-night.webp',
+  width: 1933,
+  height: 814,
+  focusX: 0.74,
+  focus: [985, 262, 1395, 480],
+  screen: { quad: [[1022, 290], [1334, 293], [1331, 410], [1025, 406]], ui: { w: 1080, h: 404 }, radius: 18 },
+  cluster: {
+    speed: [1504, 362],
+    info: [1682, 367],
+    tint: { cx: 1590, cy: 365, rx: 168, ry: 62 },
+    arrows: [[1478, 330], [1712, 330]],
   },
+  climate: { kind: 'lcd', left: [1080, 527], right: [1212, 535], size: 13 },
+  ambient: {
+    clip: [[0, 310], [600, 300], [752, 252], [1884, 278], [1933, 278], [1933, 814], [0, 814]],
+    threshold: 0.15,
+  },
+  vents: [
+    [1000, 455, 1120, 456],
+    [1170, 461, 1300, 463],
+    [720, 410, 955, 413],
+    [1830, 425, 1920, 428],
+  ],
+  windshield: {
+    clip: [[600, 0], [1884, 0], [1884, 278], [1500, 268], [1000, 262], [752, 252]],
+    holes: [
+      { cx: 1572, cy: 465, rx: 243, ry: 226 },
+      { cx: 1075, cy: 25, rx: 128, ry: 38 },
+    ],
+    pivots: [
+      { x: 990, y: 295, len: 560 },
+      { x: 1460, y: 300, len: 600 },
+    ],
+    headlight: { cx: 1320, cy: 262, rx: 560, ry: 55 },
+  },
+  hazard: [1147, 463],
+  seat: { cx: 590, cy: 792, rx: 290, ry: 70 },
+  horn: { cx: 1557, cy: 478, r: 66 },
+};
+
+export const SCENES: Record<SceneId, SceneConfig> = {
+  // Traced from the night photo, so every calibrated coordinate carries over.
+  live: { ...NIGHT, id: 'live', kind: 'drawn', label: 'Live cockpit' },
+  night: NIGHT,
   day: {
     id: 'day',
-    label: 'Day (showroom)',
+    kind: 'photo',
+    label: 'Day photo',
     src: '/images/verna-interior-dashboard.avif',
     width: 1600,
     height: 580,

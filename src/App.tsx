@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Maximize, MessageSquareText, Moon, Play, Square, Sun, ZoomIn, ZoomOut } from 'lucide-react';
+import { Layers, Maximize, MessageSquareText, Play, Square, ZoomIn, ZoomOut } from 'lucide-react';
 import type { CarState, ChatMessage, Intent, Toast } from './types';
 import { SCENES } from './scenes';
 import { initialCar, runIntents } from './state/car';
 import { parseCommand, type NluContext } from './nlu/parser';
 import { carAudio } from './lib/audio';
+import { engine } from './lib/engine';
 import { speak, useSpeechRecognition } from './lib/speech';
 import { Cockpit } from './components/Cockpit';
 import type { VoicePhase } from './components/Infotainment';
@@ -14,8 +15,12 @@ import { Transcript } from './components/Transcript';
 const DOCK_HEIGHT = 128;
 const THINK_MS = 420;
 
+const NEXT_SCENE = { live: 'night', night: 'day', day: 'live' } as const;
+const SCENE_LABEL = { live: 'Live view', night: 'Night photo', day: 'Day photo' } as const;
+
 const DEMO_SCRIPT = [
   'Namaste Verna',
+  'Gaadi start karo',
   'AC 20 pe kar do',
   'Garmi lag rahi hai',
   'Romantic gaane chalao',
@@ -23,7 +28,9 @@ const DEMO_SCRIPT = [
   'Volume thoda badhao',
   'Baarish ho rahi hai',
   'Ghar le chalo',
+  'Gear D mein daalo aur right indicator do',
   'Sport mode on karo',
+  'Ek baar rev karo',
   'Wiper band karo aur music band kar do',
 ];
 
@@ -61,6 +68,7 @@ export default function App() {
       nlu.current = parsed.context;
       const out = runIntents(carRef.current, parsed.intents, parsed.lang);
       commit(out.state);
+      if (out.state.ignition === 'on' && parsed.intents.some((i) => i.type === 'rev')) engine.blip(1300);
       if (out.toast) setToast({ ...out.toast, id: nextId++ });
       setMessages((m) => [...m, { id: nextId++, role: 'car', text: out.text, intents: parsed.intents }]);
       setReply({ text: out.text, intents: parsed.intents, understood: out.understood });
@@ -93,6 +101,25 @@ export default function App() {
     carAudio.chime('listen');
     speech.start(speechLang);
   }, [speech, speechLang]);
+
+  // Engine model follows the ignition and drive mode
+  useEffect(() => { engine.setIgnition(car.ignition, car.driveMode === 'sport'); }, [car.ignition, car.driveMode]);
+
+  // Hold ↑ or W to rev (when not typing)
+  useEffect(() => {
+    const isThrottle = (e: KeyboardEvent) => (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w')
+      && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement);
+    const down = (e: KeyboardEvent) => {
+      if (!isThrottle(e) || e.repeat) return;
+      e.preventDefault();
+      carAudio.unlock();
+      engine.press();
+    };
+    const up = (e: KeyboardEvent) => { if (isThrottle(e)) engine.release(); };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, []);
 
   // Music engine follows the media state
   const m = car.media;
@@ -138,7 +165,7 @@ export default function App() {
   return (
     <div className={`app scene-${scene.id}`}>
       <Cockpit car={car} scene={scene} toast={toast} onIntent={handleIntent} reserveBottom={DOCK_HEIGHT}
-        focused={focused} onToggleFocus={() => setFocused((f) => !f)}
+        focused={focused} onToggleFocus={() => setFocused((f) => !f)} onMic={toggleMic}
         voice={{ phase: livePhase, interim: speech.interim, reply: reply?.text ?? '' }} />
 
       <header className="topbar">
@@ -150,8 +177,8 @@ export default function App() {
           <span className="badge">Offline NLU · English · हिन्दी · Hinglish</span>
           <button className={demo !== null ? 'on' : ''} onClick={() => { carAudio.unlock(); setDemo(demo === null ? 0 : null); }}
             title="Run a guided demo">{demo !== null ? <Square /> : <Play />}<span>{demo !== null ? 'Stop demo' : 'Demo'}</span></button>
-          <button onClick={() => handleIntent({ type: 'scene', scene: car.scene === 'night' ? 'day' : 'night' })}
-            title="Switch day / night view">{car.scene === 'night' ? <Sun /> : <Moon />}<span>{car.scene === 'night' ? 'Day' : 'Night'}</span></button>
+          <button onClick={() => handleIntent({ type: 'scene', scene: NEXT_SCENE[car.scene] })}
+            title="Switch view: live drawn cockpit, night photo, day photo"><Layers /><span>{SCENE_LABEL[car.scene]}</span></button>
           <button className={focused ? 'on' : ''} onClick={() => setFocused(!focused)} title="Lean in to the screen (Z)">
             {focused ? <ZoomOut /> : <ZoomIn />}<span>{focused ? 'Cabin' : 'Screen'}</span></button>
           <button className={showLog ? 'on' : ''} onClick={() => setShowLog(!showLog)} title="Conversation log"><MessageSquareText /></button>

@@ -62,7 +62,7 @@ const W = {
   race: ['race', 'racing', 'speed chahiye', 'tez chalana'],
   head: ['headlight', 'headlights', 'head light', 'head lights', 'हेडलाइट', 'high beam', 'dipper'],
   dark: ['andhera', 'andhere', 'अंधेरा'],
-  hazard: ['hazard', 'hazards', 'emergency light', 'emergency lights', 'parking light', 'parking lights', 'blinker', 'blinkers', 'हैज़र्ड', 'हैजर्ड'],
+  hazard: ['hazard', 'hazards', 'emergency light', 'emergency lights', 'parking light', 'parking lights', 'हैज़र्ड', 'हैजर्ड'],
   night: ['night', 'raat', 'रात'],
   day: ['day', 'din', 'daylight', 'दिन'],
   viewWord: ['mode', 'view', 'scene', 'karo', 'kar', 'theme', 'मोड'],
@@ -79,6 +79,25 @@ const W = {
   both: ['dono', 'both', 'sab', 'saari', 'saare', 'sabhi', 'all', 'दोनों', 'सब', 'सारी'],
   auto: ['auto', 'automatic', 'ऑटो'],
   modeWord: ['mode', 'mood', 'vibe', 'maahol', 'mahaul', 'माहौल', 'मोड'],
+  photo: ['photo', 'picture', 'real', 'image', 'फोटो'],
+  cabinLight: ['cabin light', 'andar ki light', 'andar light', 'interior light', 'dome light', 'reading light', 'roof light', 'अंदर की लाइट'],
+  engine: ['engine', 'ignition', 'इंजन'],
+  acc: ['acc', 'accessory', 'accessories', 'electronics'],
+  vehicle: ['gaadi', 'gadi', 'car', 'vehicle', 'गाड़ी', 'गाडी'],
+  start: ['start', 'स्टार्ट'],
+  gear: ['gear', 'गियर'],
+  gearVerb: ['mein', 'daalo', 'dalo', 'daal', 'shift', 'put', 'lagao', 'में', 'डालो'],
+  indicator: ['indicator', 'indicators', 'blinker', 'blinkers', 'turn signal', 'signal', 'इंडिकेटर'],
+  left: ['left', 'baayein', 'baayen', 'bayen', 'baaye', 'baye', 'बाएं', 'बायां', 'बाएँ'],
+  right: ['right', 'daayein', 'daayen', 'dayen', 'daaye', 'daye', 'दाएं', 'दायां', 'दाएँ'],
+  turnWord: ['turn', 'mudna', 'mudo', 'mud', 'mudenge', 'lena', 'मुड़ना', 'मुड़'],
+  door: ['door', 'doors', 'darwaza', 'darwaze', 'darwaaza', 'darwaaze', 'दरवाज़ा', 'दरवाजा', 'दरवाज़े', 'दरवाजे'],
+  lock: ['lock', 'लॉक'],
+  unlock: ['unlock', 'अनलॉक'],
+  defrost: ['defrost', 'defog', 'demist', 'dhundh', 'dhund', 'fog', 'sheesha saaf', 'shisha saaf', 'glass saaf', 'धुंध'],
+  recirc: ['recirculation', 'recirc', 'recirculate', 'pollution', 'dhool', 'dhul', 'dust', 'smell', 'badbu', 'smoke', 'dhuan', 'धूल', 'प्रदूषण'],
+  autoHold: ['auto hold', 'autohold'],
+  rev: ['rev', 'revv', 'vroom', 'accelerate', 'accelerator', 'race do', 'race karo', 'throttle', 'raftaar', 'रेव'],
 } satisfies Record<string, string[]>;
 
 const COLORS: Record<AmbientColor, string[]> = {
@@ -286,8 +305,9 @@ function parseClause(c: Clause, ctx: NluContext): { intents: Intent[]; domain?: 
   }
 
   // Day / night view of the cabin
-  if (c.has(W.viewWord) && !c.has(W.climate) && !c.has(W.drive)) {
-    if (c.has(W.night)) return { intents: [{ type: 'scene', scene: 'night' }] };
+  if ((c.has(W.viewWord) || c.has(W.photo)) && !c.has(W.climate) && !c.has(W.drive)) {
+    if (c.has(W.photo)) return { intents: [{ type: 'scene', scene: c.has(W.day) ? 'day' : 'night' }] };
+    if (c.has(W.night) || c.has(['live', 'drawn'])) return { intents: [{ type: 'scene', scene: 'live' }] };
     if (c.has(W.day)) return { intents: [{ type: 'scene', scene: 'day' }] };
   }
 
@@ -321,6 +341,51 @@ function parseClause(c: Clause, ctx: NluContext): { intents: Intent[]; domain?: 
     const hit = pages.find(([, keys]) => c.has(keys));
     if (hit) return { intents: [{ type: 'screen', page: hit[0] }] };
   }
+
+  const busy = c.has([...W.climate, ...W.media, ...W.ambient, ...W.volume, ...W.window]);
+
+  // Revving ("rev karo", "accelerator dabao")
+  if (c.has(W.rev) && !c.has(W.drive)) return { intents: [{ type: 'rev' }] };
+
+  // Engine ("gaadi start karo", "engine band karo")
+  // "engine band" keeps the electronics on (ACC); "gaadi band" switches the whole car off.
+  if (c.has(W.acc) && !busy) return { intents: [{ type: 'ignition', mode: 'acc' }] };
+  if (!c.has(W.show) && !busy && (c.has(W.engine) || (c.has(W.vehicle) && (c.has(W.start) || off || on)))) {
+    const start = c.has(W.start) || !off;
+    return { intents: [{ type: 'ignition', mode: start ? 'on' : c.has(W.engine) ? 'acc' : 'off' }] };
+  }
+
+  // Indicators ("left indicator do", "right turn lena hai")
+  if (c.has(W.indicator) || ((c.has(W.left) || c.has(W.right)) && c.has(W.turnWord) && !c.has(['turn on', 'turn off']))) {
+    if (off) return { intents: [{ type: 'indicator', dir: 'off' }] };
+    if (c.has(W.both)) return { intents: [{ type: 'lights.hazard', on: true }] };
+    return { intents: [{ type: 'indicator', dir: c.has(W.right) ? 'right' : 'left' }] };
+  }
+
+  // Gear selector
+  if (!busy && !c.has(W.hazard)) {
+    if (c.has(['reverse', 'रिवर्स'])) return { intents: [{ type: 'gear', gear: 'R' }] };
+    if (c.has(['neutral', 'न्यूट्रल'])) return { intents: [{ type: 'gear', gear: 'N' }] };
+    if (c.has(['drive', 'ड्राइव']) && !c.has(['mode', 'मोड']) && (c.has(W.gear) || c.has(W.gearVerb))) return { intents: [{ type: 'gear', gear: 'D' }] };
+    if (c.has(['park', 'पार्क']) && !c.has(['parking'])) return { intents: [{ type: 'gear', gear: 'P' }] };
+    if (c.has(W.gear)) {
+      const letter = (['p', 'r', 'n', 'd'] as const).find((g) => c.tokens.includes(g));
+      if (letter) return { intents: [{ type: 'gear', gear: letter.toUpperCase() as 'P' | 'R' | 'N' | 'D' }] };
+    }
+  }
+
+  // Cabin (dome) light, before ambient lighting claims the word "light"
+  if (c.has(W.cabinLight)) return { intents: [{ type: 'lights.cabin', on: !off }] };
+
+  // Door locks
+  if (c.has(W.unlock)) return { intents: [{ type: 'doors.lock', locked: false }] };
+  if (c.has(W.lock)) return { intents: [{ type: 'doors.lock', locked: !c.has(W.open) }] };
+  if (c.has(W.door) && !c.has(W.window)) return { intents: [{ type: 'doors.lock', locked: !c.has(W.open) }] };
+
+  // Defrost and recirculation (before windows/fan claim "sheesha"/"hawa")
+  if (c.has(W.defrost)) return { intents: [{ type: 'climate.defrost', on: !off }] };
+  if (c.has(W.recirc)) return { intents: [{ type: 'climate.recirc', on: !off }] };
+  if (c.has(W.autoHold)) return { intents: [{ type: 'autohold', on: off ? false : on ? true : undefined }] };
 
   // Exterior lights
   if (c.has(W.hazard)) return { intents: [{ type: 'lights.hazard', on: !off }] };

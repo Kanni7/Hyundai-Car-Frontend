@@ -80,7 +80,7 @@ export function Airflow({ scene, on, fan, temp }: { scene: SceneConfig; on: bool
 
       ctx.clearRect(0, 0, cvs.width, cvs.height);
       ctx.globalCompositeOperation = 'lighter';
-      const intensity = 0.06 + fan * 0.012;
+      const intensity = 0.035 + fan * 0.008;
       for (let i = ps.length - 1; i >= 0; i--) {
         const p = ps[i];
         p.life += dt;

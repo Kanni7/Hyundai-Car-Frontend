@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
-  Armchair, Bluetooth, Car, CloudRain, CornerUpRight, Disc3, Fan, Flower2, Fuel, Heart, House, Lightbulb,
+  Armchair, Bluetooth, Lock, Car, CloudRain, CornerUpRight, Disc3, Fan, Flower2, Fuel, Heart, House, Lightbulb,
   MapPin, Mic, MicOff, Minus, Music, Navigation, PartyPopper, Pause, Phone, PhoneOff, Play, Plus, Power,
   Radio, Signal, SkipBack, SkipForward, Snowflake, Sun, Thermometer, TriangleAlert, Volume2, VolumeX, Wifi, Wind, Grid2x2,
 } from 'lucide-react';
@@ -21,7 +21,7 @@ interface Props {
 }
 
 const GENRE_ICON = { lofi: Disc3, romantic: Heart, party: PartyPopper, devotional: Flower2, retro: Radio };
-const TOAST_ICON = { climate: Thermometer, fan: Fan, music: Music, volume: Volume2, light: Lightbulb, seat: Armchair, wiper: CloudRain, window: Wind, drive: Car, nav: Navigation, phone: Phone };
+const TOAST_ICON = { climate: Thermometer, fan: Fan, music: Music, volume: Volume2, light: Lightbulb, seat: Armchair, wiper: CloudRain, window: Wind, drive: Car, nav: Navigation, phone: Phone, power: Power, lock: Lock };
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -40,53 +40,62 @@ export function Infotainment({ car, toast, voice, onIntent, width, height }: Pro
 
   return (
     <div className="ivi" style={style}>
-      <header className="ivi-status">
-        <div className="ivi-time">
-          <b>{now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}</b>
-          <span>{now.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
-        </div>
-        <div className="ivi-status-mid">
-          {car.phone && <span className="pill live"><Phone /> {car.phone.contact}</span>}
-          {car.nav && !car.phone && <span className="pill"><Navigation /> {car.nav.destination} · {car.nav.minutes} min</span>}
-          {car.media.playing && !car.nav && !car.phone && <span className="pill"><Music /> {car.media.radio ? `FM ${car.media.freq.toFixed(1)}` : currentTrack(car.media).title}</span>}
-        </div>
-        <div className="ivi-icons">
-          {car.hazard && <TriangleAlert className="blink-red" />}
-          {car.wipers !== 'off' && <CloudRain />}
+      {car.ignition !== 'off' ? (<>
+        <header className="ivi-status">
+          <div className="ivi-time">
+            <b>{now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}</b>
+            <span>{now.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+          </div>
+          <div className="ivi-status-mid">
+            {car.phone && <span className="pill live"><Phone /> {car.phone.contact}</span>}
+            {car.nav && !car.phone && <span className="pill"><Navigation /> {car.nav.destination} · {car.nav.minutes} min</span>}
+            {car.media.playing && !car.nav && !car.phone && <span className="pill"><Music /> {car.media.radio ? `FM ${car.media.freq.toFixed(1)}` : currentTrack(car.media).title}</span>}
+          </div>
+          <div className="ivi-icons">
+            {car.hazard && <TriangleAlert className="blink-red" />}
+            {car.wipers !== 'off' && <CloudRain />}
+            {car.ignition === 'acc' && <span className="acc-pill">ACC</span>}
           <Bluetooth /><Wifi /><Signal />
-          <span>27°C</span>
-        </div>
-      </header>
+            <span>27°C</span>
+          </div>
+        </header>
 
-      <main className="ivi-body" key={car.screen}>
-        {car.screen === 'home' && <HomePage car={car} onIntent={onIntent} go={go} />}
-        {car.screen === 'media' && <MediaPage car={car} onIntent={onIntent} />}
-        {car.screen === 'climate' && <ClimatePage car={car} onIntent={onIntent} />}
-        {car.screen === 'nav' && <NavPage car={car} onIntent={onIntent} />}
-        {car.screen === 'phone' && <PhonePage car={car} onIntent={onIntent} />}
-        {car.screen === 'vehicle' && <VehiclePage car={car} onIntent={onIntent} />}
-      </main>
+        <main className="ivi-body" key={car.screen}>
+          {car.screen === 'home' && <HomePage car={car} onIntent={onIntent} go={go} />}
+          {car.screen === 'media' && <MediaPage car={car} onIntent={onIntent} />}
+          {car.screen === 'climate' && <ClimatePage car={car} onIntent={onIntent} />}
+          {car.screen === 'nav' && <NavPage car={car} onIntent={onIntent} />}
+          {car.screen === 'phone' && <PhonePage car={car} onIntent={onIntent} />}
+          {car.screen === 'vehicle' && <VehiclePage car={car} onIntent={onIntent} />}
+        </main>
 
-      <nav className="ivi-dock">
-        {([
-          ['home', House, 'Home'], ['nav', Navigation, 'Navigation'], ['media', Music, 'Media'],
-          ['climate', Fan, 'Climate'], ['phone', Phone, 'Phone'], ['vehicle', Car, 'Vehicle'],
-        ] as const).map(([page, Icon, label]) => (
-          <button key={page} className={car.screen === page ? 'on' : ''} onClick={() => go(page)} aria-label={label}>
-            <Icon /><span>{label}</span>
-          </button>
-        ))}
-        <div className="dock-climate">
-          <span>{car.climate.on ? `${car.climate.temp.toFixed(1)}°C` : 'AC OFF'}</span>
-          <Fan /> <i>{car.climate.on ? car.climate.fan : '-'}</i>
-        </div>
-      </nav>
+        <nav className="ivi-dock">
+          {([
+            ['home', House, 'Home'], ['nav', Navigation, 'Navigation'], ['media', Music, 'Media'],
+            ['climate', Fan, 'Climate'], ['phone', Phone, 'Phone'], ['vehicle', Car, 'Vehicle'],
+          ] as const).map(([page, Icon, label]) => (
+            <button key={page} className={car.screen === page ? 'on' : ''} onClick={() => go(page)} aria-label={label}>
+              <Icon /><span>{label}</span>
+            </button>
+          ))}
+          <div className="dock-climate">
+            <span>{car.climate.on ? `${car.climate.temp.toFixed(1)}°C` : 'AC OFF'}</span>
+            <Fan /> <i>{car.climate.on ? car.climate.fan : '-'}</i>
+          </div>
+        </nav>
 
-      {toast && (
-        <div className="ivi-toast" key={toast.id}>
-          {(() => { const Icon = TOAST_ICON[toast.icon]; return <Icon />; })()}
-          <span>{toast.label}</span>
-          <b>{toast.value}</b>
+        {toast && (
+          <div className="ivi-toast" key={toast.id}>
+            {(() => { const Icon = TOAST_ICON[toast.icon]; return <Icon />; })()}
+            <span>{toast.label}</span>
+            <b>{toast.value}</b>
+          </div>
+        )}
+      </>) : (
+        <div className="standby">
+          <b>{now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}</b>
+          <span>VERNA</span>
+          <small>Press ENGINE START or say "gaadi start karo"</small>
         </div>
       )}
 
