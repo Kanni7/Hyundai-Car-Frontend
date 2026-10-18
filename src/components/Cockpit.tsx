@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { CornerUpRight, Fan, Phone } from 'lucide-react';
 import type { SceneConfig, XY } from '../scenes';
 import type { CarState, Intent, Toast } from '../types';
 import { quadToMatrix3d } from '../lib/homography';
 import { carAudio } from '../lib/audio';
-import { AMBIENT_RGB } from '../lib/ambient';
+import { AMBIENT_RGB, ambientColors } from '../lib/ambient';
+import { engine } from '../lib/engine';
 import { AmbientFilter } from './AmbientFilter';
 import { Airflow } from './Airflow';
 import { Windshield } from './Windshield';
@@ -60,7 +61,7 @@ export function Cockpit({ car, scene, toast, voice, onIntent, reserveBottom, foc
 
   const screenTransform = useMemo(() => quadToMatrix3d(scene.screen.ui.w, scene.screen.ui.h, scene.screen.quad), [scene]);
   const amb = car.ambient;
-  const ambientColor = amb.on ? AMBIENT_RGB[amb.color] : AMBIENT_RGB.off;
+  const ambientColor = amb.on ? ambientColors(car).rgb : AMBIENT_RGB.off;
   const c = car.climate;
   const drawn = scene.kind === 'drawn';
   const airflow = <Airflow scene={scene} on={c.on && car.ignition !== 'off'} fan={c.fan} temp={c.temp} />;
@@ -78,9 +79,9 @@ export function Cockpit({ car, scene, toast, voice, onIntent, reserveBottom, foc
           <img className="layer" src={scene.src} alt="Hyundai Verna interior" draggable={false} />
           {!drawn && (
             <>
-              <AmbientFilter id={`amb-${scene.id}`} color={amb.party ? AMBIENT_RGB.red : ambientColor} gain={amb.on ? amb.brightness : 1} threshold={scene.ambient.threshold} />
-              {/* Party mode spins the hue of the already-filtered layer on the GPU instead of re-running the filter. */}
-              <div className={`layer ambient ${amb.on && amb.party ? 'party' : ''}`}>
+              <AmbientFilter id={`amb-${scene.id}`} color={ambientColor} gain={amb.on ? amb.brightness : 1} threshold={scene.ambient.threshold}
+                mode={amb.on ? amb.mode : 'static'} />
+              <div className="layer ambient">
                 <img className="layer" src={scene.src} alt="" draggable={false}
                   style={{ filter: `url(#amb-${scene.id})`, clipPath: poly(scene.ambient.clip) }} />
               </div>
@@ -162,6 +163,15 @@ function LcdFan({ pos, size, fan, onStep }: { pos: XY; size: number; fan: number
 
 const MODE_TINT = { eco: '#2bff88', normal: null, sport: '#ff2a2a' } as const;
 
+/** Road speed straight from the vehicle model, updated every frame without re-rendering React. */
+function LiveSpeed() {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => engine.subscribe((_r, _t, tele) => {
+    if (ref.current) ref.current.textContent = String(Math.round(tele.speed));
+  }), []);
+  return <b ref={ref}>0</b>;
+}
+
 function Cluster({ car, cfg }: { car: CarState; cfg: NonNullable<SceneConfig['cluster']> }) {
   const tint = MODE_TINT[car.driveMode];
   let info: ReactNode;
@@ -176,9 +186,9 @@ function Cluster({ car, cfg }: { car: CarState; cfg: NonNullable<SceneConfig['cl
           <div className="cluster-glow" style={{ ...ellipseStyle(cfg.tint), background: `radial-gradient(ellipse at center, ${tint}22 0%, transparent 70%)` }} />
         </>
       )}
-      <div className="cl-patch cl-speed" style={at(cfg.speed)}><b>0</b><small>km/h</small></div>
+      <div className="cl-patch cl-speed" style={at(cfg.speed)}><LiveSpeed /><small>km/h</small></div>
       <div className="cl-patch cl-info" style={at(cfg.info)}>{info}</div>
-      {car.hazard && cfg.arrows.map(([x, y], i) => (
+      {cfg.arrows.map(([x, y], i) => (car.hazard || car.indicator === (i === 0 ? 'left' : 'right')) && (
         <svg key={i} className="cl-arrow" style={{ left: x - 7, top: y - 6 }} width="14" height="12" viewBox="0 0 14 12">
           <path d={i === 0 ? 'M0 6 L7 0 L7 3.5 L14 3.5 L14 8.5 L7 8.5 L7 12 Z' : 'M14 6 L7 0 L7 3.5 L0 3.5 L0 8.5 L7 8.5 L7 12 Z'} />
         </svg>

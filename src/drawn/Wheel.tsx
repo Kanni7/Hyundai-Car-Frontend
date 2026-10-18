@@ -187,10 +187,11 @@ export function Wheel({ car, onIntent, onMic }: { car: CarState; onIntent: (i: I
           <rect x="1689" y="481" width="20" height="12" rx="4" fill="transparent" className="hit"
             onClick={(e) => { e.stopPropagation(); onIntent({ type: 'climate.setTemp', value: car.climate.temp - 0.5 }); }}><title>Temperature down</title></rect>
           <path d="M1694 484 L1698 490 L1702 484" stroke="#d6ecff" strokeWidth="1.1" fill="none" />
-          <Key x={1692} y={513} label="Previous screen" onClick={() => onIntent({ type: 'screen', page: 'home' })}>
+          {/* Cluster menu keys: cycle the centre of the instrument cluster */}
+          <Key x={1692} y={513} label="Cluster: previous page" onClick={() => onIntent({ type: 'cluster.view', dir: -1 })}>
             <path d="M1694 509 L1689 513 L1694 517" />
           </Key>
-          <Key x={1728} y={513} label="Climate screen" onClick={() => onIntent({ type: 'screen', page: 'climate' })}>
+          <Key x={1728} y={513} label="Cluster: next page (trip, tyres)" onClick={() => onIntent({ type: 'cluster.view', dir: 1 })}>
             <path d="M1726 509 L1731 513 L1726 517" />
           </Key>
         </svg>

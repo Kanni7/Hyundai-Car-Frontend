@@ -2,7 +2,7 @@
 // Runs fully offline. Swap `parseCommand` for an LLM call later; the Intent
 // contract in types.ts stays the same.
 
-import type { AmbientColor, Genre, Intent, Lang, Mood, Page, Zone } from '../types';
+import type { AmbientColor, AmbientMode, Genre, Intent, Lang, Mood, Page, Zone } from '../types';
 
 type Domain = 'climate' | 'fan' | 'volume' | 'media' | 'ambient' | 'seat';
 
@@ -98,6 +98,13 @@ const W = {
   recirc: ['recirculation', 'recirc', 'recirculate', 'pollution', 'dhool', 'dhul', 'dust', 'smell', 'badbu', 'smoke', 'dhuan', 'धूल', 'प्रदूषण'],
   autoHold: ['auto hold', 'autohold'],
   rev: ['rev', 'revv', 'vroom', 'accelerate', 'accelerator', 'race do', 'race karo', 'throttle', 'raftaar', 'रेव'],
+  speed: ['speed', 'raftaar', 'raftar', 'how fast', 'kitni tez', 'स्पीड', 'रफ़्तार', 'रफ्तार'],
+  cruise: ['cruise', 'cruise control', 'smart cruise', 'scc', 'क्रूज़', 'क्रूज'],
+  lane: ['lane keep', 'lane keeping', 'lane assist', 'lane keeping assist', 'lka', 'lane', 'लेन'],
+  tyre: ['tyre', 'tyres', 'tire', 'tires', 'tpms', 'tyre pressure', 'टायर'],
+  trip: ['trip', 'trip meter', 'trip computer', 'odometer', 'odo', 'average', 'avg', 'ट्रिप'],
+  cluster: ['cluster', 'meter', 'speedometer', 'instrument', 'मीटर'],
+  colourWord: ['colour', 'color', 'rang', 'shade', 'रंग'],
 } satisfies Record<string, string[]>;
 
 const COLORS: Record<AmbientColor, string[]> = {
@@ -113,6 +120,17 @@ const COLORS: Record<AmbientColor, string[]> = {
   gold: ['gold', 'golden', 'sunehra', 'sunehri', 'सुनहरा'],
 };
 
+/** Ambient light effects. Generic words like "flow" only count next to a light or colour word. */
+const AMB_MODES: Record<AmbientMode, string[]> = {
+  dual: ['dual', 'dual tone', 'two tone', 'do rang', 'dono rang', 'two colour', 'two color', 'दो रंग'],
+  breathe: ['breathe', 'breathing', 'saans', 'pulse', 'pulsing', 'dhadakti', 'सांस', 'साँस'],
+  flow: ['flow', 'flowing', 'wave', 'waves', 'chase', 'chasing', 'behti', 'lehar', 'लहर'],
+  music: ['music sync', 'sync', 'beat', 'beats', 'rhythm', 'music ke saath', 'gaane ke saath', 'sound reactive', 'react'],
+  drive: ['drive mode', 'driving mode', 'drive linked', 'link to drive', 'drive'],
+  rainbow: ['rainbow', 'satrangi', 'colorful', 'colourful', 'rangeen', 'cycle', 'disco', 'सतरंगी', 'इंद्रधनुष'],
+  static: ['static', 'steady', 'fixed', 'sthir', 'still', 'स्थिर'],
+};
+
 const GENRES: Record<Genre, string[]> = {
   romantic: ['romantic', 'romance', 'love', 'pyaar', 'pyar', 'ishq', 'arijit', 'रोमांटिक', 'प्यार'],
   party: ['party', 'dance', 'upbeat', 'dhamaka', 'energetic', 'punjabi', 'bhangra', 'badshah', 'diljit', 'पार्टी', 'डांस'],
@@ -126,6 +144,8 @@ const MOODS: Record<Mood, string[]> = {
   relax: ['relax', 'relaxing', 'aaram', 'araam', 'calm', 'chill', 'आराम'],
   romantic: ['romantic', 'date', 'रोमांटिक'],
   focus: ['focus', 'concentrate', 'study', 'work', 'फोकस'],
+  energy: ['energy', 'energise', 'energize', 'josh', 'जोश'],
+  cozy: ['cozy', 'cosy', 'candle', 'candlelight', 'diya'],
 };
 const TIRED = ['thak', 'thaka', 'thaki', 'tired', 'stress', 'stressed', 'थक', 'थका', 'थकी'];
 
@@ -295,6 +315,16 @@ function parseClause(c: Clause, ctx: NluContext): { intents: Intent[]; domain?: 
     if (c.has(W.media)) return { intents: [{ type: 'query', topic: 'music' }] };
     if (c.has(W.climate)) return { intents: [{ type: 'query', topic: 'temp' }] };
     if (c.has(W.time)) return { intents: [{ type: 'query', topic: 'time' }] };
+    if (c.has(W.speed) && !c.has(W.fan)) return { intents: [{ type: 'query', topic: 'speed' }] };
+  }
+  if (c.has(['how fast'])) return { intents: [{ type: 'query', topic: 'speed' }] };
+
+  // Instrument cluster pages ("tyre pressure dikhao", "trip meter", "cluster next")
+  if (c.has(W.tyre)) return { intents: [{ type: 'query', topic: 'tyres' }] };
+  if (c.has(W.trip) && !c.has(W.navTrigger)) return { intents: [{ type: 'cluster.view', view: 'trip' }] };
+  if (c.has(W.cluster) && !c.has(W.ambient)) {
+    if (c.has(['adas', 'assist', 'lane'])) return { intents: [{ type: 'cluster.view', view: 'drive' }] };
+    return { intents: [{ type: 'cluster.view', dir: c.has(W.prev) ? -1 : 1 }] };
   }
 
   // Mood presets
@@ -336,6 +366,7 @@ function parseClause(c: Clause, ctx: NluContext): { intents: Intent[]; domain?: 
       ['climate', W.climate],
       ['phone', ['phone', 'contacts', 'फोन']],
       ['vehicle', ['car', 'vehicle', 'gaadi', 'gadi', 'settings', 'गाड़ी']],
+      ['lights', W.ambient],
       ['home', ['home', 'होम']],
     ];
     const hit = pages.find(([, keys]) => c.has(keys));
@@ -346,6 +377,16 @@ function parseClause(c: Clause, ctx: NluContext): { intents: Intent[]; domain?: 
 
   // Revving ("rev karo", "accelerator dabao")
   if (c.has(W.rev) && !c.has(W.drive)) return { intents: [{ type: 'rev' }] };
+
+  // Smart Cruise Control ("cruise 80 pe set karo", "cruise thoda badhao", "cruise band")
+  if (c.has(W.cruise)) {
+    if (off) return { intents: [{ type: 'cruise', on: false }] };
+    const kmh = c.number(30, 180);
+    if (kmh !== undefined) return { intents: [{ type: 'cruise', on: true, speed: kmh }] };
+    if (up || down) return { intents: [{ type: 'cruise', on: true, delta: step(c, 5, 10, 20) * (down ? -1 : 1) }] };
+    return { intents: [{ type: 'cruise', on: true }] };
+  }
+  if (c.has(W.lane) && !c.has(W.indicator)) return { intents: [{ type: 'adas.lka', on: !off }] };
 
   // Engine ("gaadi start karo", "engine band karo")
   // "engine band" keeps the electronics on (ACC); "gaadi band" switches the whole car off.
@@ -376,6 +417,23 @@ function parseClause(c: Clause, ctx: NluContext): { intents: Intent[]; domain?: 
 
   // Cabin (dome) light, before ambient lighting claims the word "light"
   if (c.has(W.cabinLight)) return { intents: [{ type: 'lights.cabin', on: !off }] };
+
+  // Ambient light effects ("breathing red light", "light music ke saath", "dual tone blue purple")
+  const effect = c.find(AMB_MODES);
+  const colors = (Object.keys(COLORS) as AmbientColor[])
+    .map((k) => ({ k, at: Math.min(...COLORS[k].map((w) => c.tokens.indexOf(fold(w))).filter((i) => i >= 0)) }))
+    .filter((x) => Number.isFinite(x.at)).sort((a, b) => a.at - b.at).map((x) => x.k);
+  if (effect && !off && (c.has(W.ambient) || colors.length || c.has(['rainbow', 'satrangi', 'disco', 'dual tone', 'सतरंगी']))) {
+    const out: Intent[] = [];
+    if (effect === 'dual') {
+      if (colors.length > 1) out.push({ type: 'ambient.color', color: colors[0] });
+      out.push({ type: 'ambient.mode', mode: 'dual', color2: colors[colors.length - 1] });
+    } else {
+      if (colors[0]) out.push({ type: 'ambient.color', color: colors[0] });
+      out.push({ type: 'ambient.mode', mode: effect });
+    }
+    return { intents: out, domain: 'ambient' };
+  }
 
   // Door locks
   if (c.has(W.unlock)) return { intents: [{ type: 'doors.lock', locked: false }] };
@@ -467,7 +525,9 @@ function parseClause(c: Clause, ctx: NluContext): { intents: Intent[]; domain?: 
   }
 
   // Ambient lighting
-  if (c.has(W.ambient) || color) {
+  const shade = c.has(W.colourWord) ? c.number(1, 64) : undefined;
+  if (c.has(W.ambient) || color || shade !== undefined) {
+    if (shade !== undefined && !color) return { intents: [{ type: 'ambient.hue', hue: shade - 1 }], domain: 'ambient' };
     if (color && !off) return { intents: [{ type: 'ambient.color', color }], domain: 'ambient' };
     if (off) return { intents: [{ type: 'ambient.power', on: false }], domain: 'ambient' };
     if (up || down) {

@@ -25,10 +25,10 @@ export function Pedals({ tint }: { tint: string }) {
   return (
     <Part x={1540} y={680} w={250} h={130} className="pedals">
       <g className={`hit pedal ${brake ? 'pressed' : ''}`} style={{ transformOrigin: '1640px 690px' }}
-        onPointerDown={(e) => { (e.target as Element).setPointerCapture(e.pointerId); setBrake(true); engine.brakeHeld = true; }}
-        onPointerUp={() => { setBrake(false); engine.brakeHeld = false; }}
-        onPointerCancel={() => { setBrake(false); engine.brakeHeld = false; }} role="button" aria-label="Brake pedal">
-        <title>Brake (hold it and press START to fire the engine straight away)</title>
+        onPointerDown={(e) => { (e.target as Element).setPointerCapture(e.pointerId); setBrake(true); engine.setBrake(true); }}
+        onPointerUp={() => { setBrake(false); engine.setBrake(false); }}
+        onPointerCancel={() => { setBrake(false); engine.setBrake(false); }} role="button" aria-label="Brake pedal">
+        <title>Brake: slows the car and cancels cruise (hold it and press START to fire the engine straight away). Or hold ↓ / S.</title>
         <path d="M1630 708 L1640 686" stroke="#121821" strokeWidth="7" strokeLinecap="round" />
         <path d={BRAKE} fill="url(#d-pedal)" stroke="#c4cedc" strokeWidth="1.2" />
         <path d={BRAKE} fill={tint} opacity="0.28" />
@@ -40,7 +40,7 @@ export function Pedals({ tint }: { tint: string }) {
       </g>
       <g className="hit pedal accel" style={{ transform: `translateY(${throttle * 7}px) scaleY(${1 - throttle * 0.07})`, transformOrigin: '1756px 690px' }}
         onPointerDown={press} onPointerUp={release} onPointerCancel={release} role="button" aria-label="Accelerator pedal">
-        <title>Accelerator: hold to rev (or hold ↑ / W)</title>
+        <title>Accelerator: hold to rev, or to drive in D / R (or hold ↑ / W)</title>
         <path d="M1752 703 L1760 686" stroke="#121821" strokeWidth="6" strokeLinecap="round" />
         <path d={ACCEL} fill="url(#d-pedal)" stroke="#c4cedc" strokeWidth="1.1" />
         <path d={ACCEL} fill={tint} opacity={0.2 + throttle * 0.15} />

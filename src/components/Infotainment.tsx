@@ -1,11 +1,13 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
-  Armchair, Bluetooth, Lock, Car, CloudRain, CornerUpRight, Disc3, Fan, Flower2, Fuel, Heart, House, Lightbulb,
-  MapPin, Mic, MicOff, Minus, Music, Navigation, PartyPopper, Pause, Phone, PhoneOff, Play, Plus, Power,
-  Radio, Signal, SkipBack, SkipForward, Snowflake, Sun, Thermometer, TriangleAlert, Volume2, VolumeX, Wifi, Wind, Grid2x2,
+  Armchair, AudioLines, Bluetooth, Lock, Car, CloudRain, Contrast, CornerUpRight, Disc3, Fan, Flame, Flower2, Fuel, Gauge, Heart, House,
+  Leaf, Lightbulb, MapPin, Mic, MicOff, Minus, Music, Navigation, Palette, PartyPopper, Pause, Phone, PhoneOff, Play, Plus, Power,
+  Radio, Rainbow, Signal, SkipBack, SkipForward, Snowflake, Sparkles, Sun, Target, Thermometer, TriangleAlert, Volume2, VolumeX, Waves,
+  Wifi, Wind, Zap, Grid2x2,
 } from 'lucide-react';
-import type { CarState, Intent, Page, Toast } from '../types';
+import type { AmbientColor, AmbientMode, CarState, Intent, Mood, Page, Toast } from '../types';
 import { COLOR_LABEL, currentTrack, FAN_MAX, GENRE_LABEL, VOLUME_MAX } from '../state/car';
+import { AMBIENT_MODES, ambientColors, HUE_STEPS, hueCss } from '../lib/ambient';
 import { EqBars } from './EqBars';
 import { MapView } from './MapView';
 
@@ -34,7 +36,8 @@ function useClock() {
 
 export function Infotainment({ car, toast, voice, onIntent, width, height }: Props) {
   const now = useClock();
-  const accent = car.ambient.on && !car.ambient.party ? COLOR_LABEL[car.ambient.color].css : '#3d8bff';
+  const cycling = car.ambient.mode === 'rainbow' || car.ambient.mode === 'music';
+  const accent = car.ambient.on && !cycling ? ambientColors(car).css : '#3d8bff';
   const style = { width, height, '--accent': accent, fontSize: `${height / 25}px` } as CSSProperties;
   const go = (page: Page) => onIntent({ type: 'screen', page });
 
@@ -64,6 +67,7 @@ export function Infotainment({ car, toast, voice, onIntent, width, height }: Pro
           {car.screen === 'home' && <HomePage car={car} onIntent={onIntent} go={go} />}
           {car.screen === 'media' && <MediaPage car={car} onIntent={onIntent} />}
           {car.screen === 'climate' && <ClimatePage car={car} onIntent={onIntent} />}
+          {car.screen === 'lights' && <LightsPage car={car} onIntent={onIntent} />}
           {car.screen === 'nav' && <NavPage car={car} onIntent={onIntent} />}
           {car.screen === 'phone' && <PhonePage car={car} onIntent={onIntent} />}
           {car.screen === 'vehicle' && <VehiclePage car={car} onIntent={onIntent} />}
@@ -72,7 +76,7 @@ export function Infotainment({ car, toast, voice, onIntent, width, height }: Pro
         <nav className="ivi-dock">
           {([
             ['home', House, 'Home'], ['nav', Navigation, 'Navigation'], ['media', Music, 'Media'],
-            ['climate', Fan, 'Climate'], ['phone', Phone, 'Phone'], ['vehicle', Car, 'Vehicle'],
+            ['climate', Fan, 'Climate'], ['lights', Palette, 'Lights'], ['phone', Phone, 'Phone'], ['vehicle', Car, 'Vehicle'],
           ] as const).map(([page, Icon, label]) => (
             <button key={page} className={car.screen === page ? 'on' : ''} onClick={() => go(page)} aria-label={label}>
               <Icon /><span>{label}</span>
@@ -318,6 +322,68 @@ function PhonePage({ car, onIntent }: PageProps) {
   );
 }
 
+const MOOD_BUTTONS: [Mood, typeof Heart, string][] = [
+  ['party', PartyPopper, 'Party'], ['relax', Leaf, 'Relax'], ['romantic', Heart, 'Romantic'],
+  ['focus', Target, 'Focus'], ['energy', Zap, 'Energy'], ['cozy', Flame, 'Cozy'],
+];
+const MODE_ICON: Record<AmbientMode, typeof Heart> = {
+  static: Lightbulb, breathe: Waves, flow: Sparkles, music: AudioLines, drive: Gauge, rainbow: Rainbow, dual: Contrast,
+};
+
+/** Ambient lighting: mood presets, light effects, 10 named colours plus the 64-colour palette. */
+function LightsPage({ car, onIntent }: PageProps) {
+  const a = car.ambient;
+  const [target, setTarget] = useState<'dash' | 'doors'>('dash');
+  const doors = a.mode === 'dual' && target === 'doors';
+  const name = a.hue !== null ? `Colour ${a.hue + 1} / ${HUE_STEPS}` : COLOR_LABEL[a.color].en;
+  const pick = (color: AmbientColor) => onIntent(doors ? { type: 'ambient.mode', mode: 'dual', color2: color } : { type: 'ambient.color', color });
+  return (
+    <div className="lights">
+      <div className="lights-head">
+        <button className={`power ${a.on ? 'on' : ''}`} onClick={() => onIntent({ type: 'ambient.power', on: !a.on })} aria-label="Ambient lighting on or off"><Power /></button>
+        <div className="name">
+          <small>Ambient lighting</small>
+          <b>{a.on ? <>{name}{a.mode === 'dual' && <> · {COLOR_LABEL[a.color2].en}</>}</> : 'Off'}</b>
+        </div>
+        {a.mode === 'dual' && (
+          <div className="segmented dual-target">
+            <button className={target === 'dash' ? 'on' : ''} onClick={() => setTarget('dash')}>Dash</button>
+            <button className={target === 'doors' ? 'on' : ''} onClick={() => setTarget('doors')}>Doors</button>
+          </div>
+        )}
+        <div className="bright">
+          <button onClick={() => onIntent({ type: 'ambient.brightness', delta: -0.2 })} aria-label="Dimmer"><Minus /></button>
+          <div className="vol-track"><i style={{ width: `${(a.brightness / 1.5) * 100}%` }} /></div>
+          <button onClick={() => onIntent({ type: 'ambient.brightness', delta: 0.2 })} aria-label="Brighter"><Plus /></button>
+        </div>
+      </div>
+      <div className="moods">
+        {MOOD_BUTTONS.map(([mood, Icon, label]) => (
+          <button key={mood} onClick={() => onIntent({ type: 'mood', mood })}><Icon /> {label}</button>
+        ))}
+      </div>
+      <div className="segmented fx">
+        {AMBIENT_MODES.map((m) => {
+          const Icon = MODE_ICON[m.id];
+          return <button key={m.id} className={a.on && a.mode === m.id ? 'on' : ''} onClick={() => onIntent({ type: 'ambient.mode', mode: m.id })}><Icon /> {m.en}</button>;
+        })}
+      </div>
+      <div className="swatches">
+        {(Object.keys(COLOR_LABEL) as AmbientColor[]).map((c) => {
+          const on = doors ? a.color2 === c : a.hue === null && a.color === c;
+          return <button key={c} className={on ? 'on' : ''} style={{ background: COLOR_LABEL[c].css }} onClick={() => pick(c)} aria-label={COLOR_LABEL[c].en} title={COLOR_LABEL[c].en} />;
+        })}
+        <div className="hue" title="64-colour palette">
+          {Array.from({ length: HUE_STEPS }, (_, i) => (
+            <button key={i} className={!doors && a.hue === i ? 'on' : ''} style={{ background: hueCss(i) }} disabled={doors}
+              onClick={() => onIntent({ type: 'ambient.hue', hue: i })} aria-label={`Colour ${i + 1}`} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VehiclePage({ car, onIntent }: PageProps) {
   return (
     <div className="vehicle">
@@ -349,6 +415,9 @@ function VehiclePage({ car, onIntent }: PageProps) {
           <button className={car.wipers !== 'off' ? 'on' : ''} onClick={() => onIntent({ type: 'wipers', mode: car.wipers === 'off' ? 'slow' : car.wipers === 'slow' ? 'fast' : 'off' })}><CloudRain /> Wipers {car.wipers !== 'off' && car.wipers}</button>
           <button className={car.sunroof ? 'on' : ''} onClick={() => onIntent({ type: 'sunroof', open: !car.sunroof })}><Sun /> Sunroof</button>
           <button className={car.windows.driver || car.windows.passenger ? 'on' : ''} onClick={() => onIntent({ type: 'window', target: 'both', open: car.windows.driver || car.windows.passenger ? 0 : 100 })}><Wind /> Windows</button>
+          <button className={car.adas.lka ? 'on' : ''} onClick={() => onIntent({ type: 'adas.lka', on: !car.adas.lka })}><Car /> Lane keep</button>
+          <button className={car.adas.cruise !== null ? 'on' : ''} onClick={() => onIntent({ type: 'cruise', on: car.adas.cruise === null })}><Gauge /> Cruise {car.adas.cruise ?? ''}</button>
+          <button className={car.autoHold ? 'on' : ''} onClick={() => onIntent({ type: 'autohold', on: !car.autoHold })}><Lock /> Auto hold</button>
         </div>
         <div className="fuel">
           <Fuel /><div className="vol-track"><i style={{ width: `${car.fuel}%` }} /></div><b>{car.range} km</b>

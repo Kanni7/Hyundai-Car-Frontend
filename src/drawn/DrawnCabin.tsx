@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { CarState, Intent } from '../types';
-import { COLOR_LABEL } from '../state/car';
+import { ambientColors } from '../lib/ambient';
 import { Defs } from './Defs';
 import { CabinBase } from './CabinBase';
 import { Ambient } from './Ambient';
@@ -24,14 +24,15 @@ interface Props {
 /** The fully drawn cockpit, stacked back to front like the real cabin. */
 export function DrawnCabin({ car, onIntent, onMic, airflow, screen }: Props) {
   const amb = car.ambient;
-  const ambColor = amb.on ? COLOR_LABEL[amb.color].css : '#000000';
+  const { css, css2 } = ambientColors(car);
+  const ambColor = amb.on ? css : '#000000';
   const ambLevel = amb.on && car.ignition !== 'off' ? Math.min(1, amb.brightness) : 0;
 
   return (
     <>
       <Defs />
       <CabinBase />
-      <Ambient color={ambColor} level={ambLevel} party={amb.on && amb.party} />
+      <Ambient color={ambColor} color2={amb.on ? css2 : '#000000'} level={ambLevel} mode={amb.mode} />
       <Door car={car} onIntent={onIntent} />
       <MirrorButtons car={car} onIntent={onIntent} />
       <VentModule car={car} onIntent={onIntent} />

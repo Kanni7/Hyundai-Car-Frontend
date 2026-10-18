@@ -1,9 +1,13 @@
-import type { AmbientColor, CarState, Genre, Intent, Lang, Reply, Toast } from '../types';
+import type { AmbientColor, CarState, ClusterView, Genre, Intent, Lang, Reply, Toast } from '../types';
+import { AMBIENT_MODES, HUE_STEPS } from '../lib/ambient';
 
 export const TEMP_MIN = 16;
 export const TEMP_MAX = 30;
 export const FAN_MAX = 8;
 export const VOLUME_MAX = 30;
+export const CRUISE_MIN = 30;
+export const CRUISE_MAX = 180;
+const CLUSTER_VIEWS: ClusterView[] = ['drive', 'trip', 'tyres'];
 
 export const TRACKS: Record<Genre, { title: string; artist: string }[]> = {
   lofi: [
@@ -56,7 +60,7 @@ export const initialCar: CarState = {
   scene: 'live',
   climate: { on: true, temp: 22, fan: 3, auto: false, recirc: false, defrost: false },
   media: { playing: false, radio: false, freq: 93.5, genre: 'lofi', track: 0, volume: 12, muted: false },
-  ambient: { on: true, color: 'blue', brightness: 1, party: false },
+  ambient: { on: true, color: 'blue', color2: 'purple', hue: null, brightness: 1, mode: 'static' },
   wipers: 'off',
   windows: { driver: 0, passenger: 0 },
   sunroof: false,
@@ -73,8 +77,11 @@ export const initialCar: CarState = {
   locked: false,
   autoHold: false,
   screen: 'home',
+  cluster: 'drive',
+  adas: { lka: true, cruise: null },
   fuel: 62,
   range: 478,
+  tyres: [35, 35, 34, 35],
 };
 
 export const engineOn = (s: CarState) => s.ignition === 'on';
@@ -96,8 +103,11 @@ function hash(s: string) {
 
 const r = (en: string, hi: string, toast?: Reply['toast']): Reply => ({ en, hi, toast });
 
+/** Live readings from the vehicle model that some intents depend on. */
+export interface Env { speed: number }
+
 /** Applies one intent; returns the new state plus what the car says back. */
-export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: Reply } {
+export function applyIntent(s: CarState, it: Intent, env: Env = { speed: 0 }): { state: CarState; reply: Reply } {
   const c = s.climate;
   switch (it.type) {
     case 'climate.setTemp': {
@@ -212,13 +222,14 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
     case 'ambient.color': {
       const l = COLOR_LABEL[it.color];
       return {
-        state: { ...s, ambient: { ...s.ambient, on: true, color: it.color, party: false } },
+        state: { ...s, ambient: { ...s.ambient, on: true, color: it.color, hue: null,
+          mode: s.ambient.mode === 'rainbow' || s.ambient.mode === 'music' ? 'static' : s.ambient.mode } },
         reply: r(`Ambient lighting set to ${l.en}.`, `Ambient light ${l.hi} kar di.`, { icon: 'light', label: 'Ambient light', value: l.en }),
       };
     }
     case 'ambient.power':
       return {
-        state: { ...s, ambient: { ...s.ambient, on: it.on, party: false } },
+        state: { ...s, ambient: { ...s.ambient, on: it.on } },
         reply: it.on
           ? r('Ambient lighting on.', 'Ambient light chalu kar di.', { icon: 'light', label: 'Ambient light', value: 'On' })
           : r('Ambient lighting off.', 'Ambient light band kar di.', { icon: 'light', label: 'Ambient light', value: 'Off' }),
@@ -230,34 +241,71 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
         reply: r(`Ambient brightness ${Math.round(b * 100 / 1.5)}%.`, `Roshni ${it.delta > 0 ? 'badha' : 'kam kar'} di.`, { icon: 'light', label: 'Brightness', value: `${Math.round(b * 100 / 1.5)}%` }),
       };
     }
+    case 'ambient.mode': {
+      const m = AMBIENT_MODES.find((x) => x.id === it.mode)!;
+      const color2 = it.color2 ?? (s.ambient.color2 === s.ambient.color ? 'purple' : s.ambient.color2);
+      const toast = { icon: 'light' as const, label: 'Light effect', value: m.en };
+      const state = { ...s, ambient: { ...s.ambient, on: true, mode: it.mode, color2 } };
+      if (it.mode === 'music' && !s.media.playing) {
+        return { state, reply: r('Music sync on. The lights will pulse once something plays.', 'Music sync on. Gaana chalega toh lights saath mein naachengi.', toast) };
+      }
+      if (it.mode === 'dual') {
+        const [a, b] = [COLOR_LABEL[s.ambient.color], COLOR_LABEL[color2]];
+        return { state, reply: r(`Dual tone: ${a.en} on the dash, ${b.en} on the doors.`, `Dashboard ${a.hi} aur darwaze ${b.hi}.`, toast) };
+      }
+      return { state, reply: r(`Ambient light effect: ${m.en}.`, `Ambient light ab ${m.hi}.`, toast) };
+    }
+    case 'ambient.hue': {
+      const hue = ((Math.round(it.hue) % HUE_STEPS) + HUE_STEPS) % HUE_STEPS;
+      return {
+        state: { ...s, ambient: { ...s.ambient, on: true, hue, mode: s.ambient.mode === 'rainbow' ? 'static' : s.ambient.mode } },
+        reply: r(`Custom colour ${hue + 1} of ${HUE_STEPS}.`, `Rang number ${hue + 1} set kar diya.`, { icon: 'light', label: 'Ambient colour', value: `${hue + 1} / ${HUE_STEPS}` }),
+      };
+    }
 
     case 'mood': {
       if (it.mood === 'party') {
         return {
-          state: { ...s, ambient: { ...s.ambient, on: true, party: true, brightness: 1.3 },
+          state: { ...s, ambient: { ...s.ambient, on: true, mode: 'music', brightness: 1.3 },
             media: { ...s.media, playing: true, radio: false, muted: false, genre: 'party', track: 0, volume: Math.max(s.media.volume, 18) },
             screen: 'media' },
-          reply: r('Party mode! Lights cycling and the music is up.', 'Party mode on! Lights aur music dono set.'),
+          reply: r('Party mode! The lights now dance to the music.', 'Party mode on! Lights music ke saath naachengi.'),
         };
       }
       if (it.mood === 'relax') {
         return {
-          state: { ...s, ambient: { on: true, color: 'blue', brightness: 0.6, party: false },
+          state: { ...s, ambient: { ...s.ambient, on: true, color: 'blue', hue: null, brightness: 0.6, mode: 'breathe' },
             media: { ...s.media, playing: true, radio: false, muted: false, genre: 'lofi', track: 0, volume: Math.min(s.media.volume, 10) },
             climate: { ...c, on: true, temp: 23, fan: 2, auto: false },
             seats: { driver: Math.max(1, s.seats.driver), passenger: s.seats.passenger } },
-          reply: r('Relax mode: soft blue light, calm music, 23°C and a cool seat.', 'Aaram se. Halki neeli roshni, shaant music, 23°C aur seat thandi.'),
+          reply: r('Relax mode: slow breathing blue light, calm music, 23°C and a cool seat.', 'Aaram se. Dheere saans leti neeli roshni, shaant music, 23°C aur seat thandi.'),
         };
       }
       if (it.mood === 'romantic') {
         return {
-          state: { ...s, ambient: { on: true, color: 'pink', brightness: 0.8, party: false },
+          state: { ...s, ambient: { ...s.ambient, on: true, color: 'pink', color2: 'purple', hue: null, brightness: 0.8, mode: 'dual' },
             media: { ...s.media, playing: true, radio: false, muted: false, genre: 'romantic', track: 0 } },
-          reply: r('Romantic mode: a warm pink glow and soft songs.', 'Romantic mood set: gulabi roshni aur romantic gaane.'),
+          reply: r('Romantic mode: a pink and purple glow and soft songs.', 'Romantic mood set: gulabi-baingani roshni aur romantic gaane.'),
+        };
+      }
+      if (it.mood === 'energy') {
+        return {
+          state: { ...s, ambient: { ...s.ambient, on: true, color: 'orange', hue: null, brightness: 1.3, mode: 'flow' },
+            media: { ...s.media, playing: true, radio: false, muted: false, genre: 'retro', track: 0, volume: Math.max(s.media.volume, 14) },
+            climate: { ...c, on: true, temp: 21, fan: Math.max(c.fan, 4), auto: false } },
+          reply: r('Energy mode: flowing orange light, upbeat classics and a cooler 21°C.', 'Energy mode: behti narangi roshni, josh wale gaane aur 21°C.'),
+        };
+      }
+      if (it.mood === 'cozy') {
+        return {
+          state: { ...s, ambient: { ...s.ambient, on: true, color: 'gold', hue: null, brightness: 0.45, mode: 'static' },
+            media: { ...s.media, playing: true, radio: false, muted: false, genre: 'lofi', track: 0, volume: Math.min(s.media.volume, 8) },
+            climate: { ...c, on: true, temp: 25, fan: 2, auto: false } },
+          reply: r('Cozy mode: dim golden light, soft lo-fi and a warm 25°C.', 'Cozy mode: halki sunehri roshni, dheema lo-fi aur 25°C.'),
         };
       }
       return {
-        state: { ...s, ambient: { on: true, color: 'white', brightness: 0.7, party: false },
+        state: { ...s, ambient: { ...s.ambient, on: true, color: 'white', hue: null, brightness: 0.7, mode: 'static' },
           media: { ...s.media, playing: false }, climate: { ...c, on: true, temp: 22 } },
         reply: r('Focus mode: music off, clean white light, 22°C.', 'Focus mode: music band, safed roshni, 22°C.'),
       };
@@ -379,6 +427,7 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
         media: off ? { ...s.media, playing: false } : s.media,
         phone: off ? null : s.phone,
         indicator: off ? 'off' : s.indicator,
+        adas: { ...s.adas, cruise: to === 'on' ? s.adas.cruise : null },
       };
       const toast = { icon: 'power' as const, label: 'Ignition', value: to.toUpperCase() };
       if (to === 'on') return { state, reply: r('Engine started. Welcome aboard!', 'Gaadi start ho gayi. Swagat hai!', toast) };
@@ -398,13 +447,19 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
       if (!engineOn(s) && it.gear !== 'P') {
         return { state: s, reply: r('Start the engine first.', 'Pehle gaadi start kijiye.') };
       }
+      // The gearbox refuses P, or a change of direction, while the car is still rolling.
+      const reversing = (s.gear === 'R') !== (it.gear === 'R') && it.gear !== 'N';
+      if (env.speed > 5 && it.gear !== s.gear && (it.gear === 'P' || reversing)) {
+        return { state: s, reply: r(`Please stop first. We are doing ${Math.round(env.speed)} km/h.`, `Pehle gaadi rokiye, abhi ${Math.round(env.speed)} km/h pe hain.`) };
+      }
       const text = {
         P: ['Gear in Park.', 'Gear P mein, gaadi park hai.'],
         R: ['Reverse. Please check behind you.', 'Reverse mein daal diya, peeche dekh lijiye.'],
         N: ['Gear in Neutral.', 'Neutral mein daal diya.'],
         D: ['Gear in Drive.', 'Gear D mein daal diya.'],
       }[it.gear];
-      return { state: { ...s, gear: it.gear }, reply: r(text[0], text[1], { icon: 'drive', label: 'Gear', value: it.gear }) };
+      const adas = it.gear === 'D' ? s.adas : { ...s.adas, cruise: null };
+      return { state: { ...s, gear: it.gear, adas }, reply: r(text[0], text[1], { icon: 'drive', label: 'Gear', value: it.gear }) };
     }
     case 'indicator': {
       const state = { ...s, indicator: it.dir };
@@ -432,8 +487,39 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
       };
     }
     case 'screen': {
-      const name = { home: 'Home', nav: 'Navigation', media: 'Media', climate: 'Climate', phone: 'Phone', vehicle: 'Vehicle' }[it.page];
+      const name = { home: 'Home', nav: 'Navigation', media: 'Media', climate: 'Climate', lights: 'Lighting', phone: 'Phone', vehicle: 'Vehicle' }[it.page];
       return { state: { ...s, screen: it.page }, reply: r(`Opening ${name}.`, `${name} screen khol di.`) };
+    }
+    case 'cluster.view': {
+      const i = CLUSTER_VIEWS.indexOf(s.cluster);
+      const view = it.view ?? CLUSTER_VIEWS[(i + (it.dir ?? 1) + CLUSTER_VIEWS.length) % CLUSTER_VIEWS.length];
+      const name = { drive: ['Driving assist', 'driving assist'], trip: ['Trip computer', 'trip info'], tyres: ['Tyre pressure', 'tyre pressure'] }[view];
+      return { state: { ...s, cluster: view }, reply: r(`Cluster: ${name[0]}.`, `Cluster mein ${name[1]} dikha raha hoon.`) };
+    }
+    case 'adas.lka':
+      return {
+        state: { ...s, adas: { ...s.adas, lka: it.on } },
+        reply: it.on
+          ? r('Lane Keeping Assist on.', 'Lane Keeping Assist chalu.', { icon: 'drive', label: 'Lane Keeping', value: 'On' })
+          : r('Lane Keeping Assist off.', 'Lane Keeping Assist band.', { icon: 'drive', label: 'Lane Keeping', value: 'Off' }),
+      };
+    case 'cruise': {
+      if (!it.on) {
+        return {
+          state: { ...s, adas: { ...s.adas, cruise: null } },
+          reply: s.adas.cruise === null ? r('Cruise control is already off.', 'Cruise control pehle se band hai.')
+            : r('Cruise control cancelled.', 'Cruise control band kar diya.', { icon: 'drive', label: 'Smart Cruise', value: 'Off' }),
+        };
+      }
+      if (!engineOn(s) || s.gear !== 'D') {
+        return { state: s, reply: r('Cruise control needs the engine running and the gear in D.', 'Cruise ke liye gaadi start karke gear D mein daaliye.') };
+      }
+      const base = s.adas.cruise ?? Math.max(CRUISE_MIN, Math.round(env.speed / 5) * 5);
+      const v = clamp(Math.round((it.speed ?? base + (it.delta ?? 0)) / 5) * 5, CRUISE_MIN, CRUISE_MAX);
+      return {
+        state: { ...s, adas: { ...s.adas, cruise: v } },
+        reply: r(`Smart Cruise set to ${v} km/h.`, `Cruise ${v} km/h pe set kar diya.`, { icon: 'drive', label: 'Smart Cruise', value: `${v} km/h` }),
+      };
     }
 
     case 'query': {
@@ -451,6 +537,17 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
           ? r(`Now playing ${t.title} by ${t.artist}.`, `Abhi ${t.title} chal raha hai.`)
           : r('Nothing is playing right now.', 'Abhi koi gaana nahi chal raha.') };
       }
+      if (it.topic === 'speed') {
+        const v = Math.round(env.speed);
+        return { state: s, reply: v === 0 ? r('We are standing still.', 'Gaadi abhi ruki hui hai.')
+          : r(`We are doing ${v} km/h.`, `Abhi ${v} km/h ki speed hai.`) };
+      }
+      if (it.topic === 'tyres') {
+        const [fl, fr, rl, rr] = s.tyres;
+        return { state: { ...s, cluster: 'tyres' }, reply: r(
+          `Tyre pressures: front ${fl} and ${fr}, rear ${rl} and ${rr} psi. All normal.`,
+          `Tyre pressure: aage ${fl} aur ${fr}, peeche ${rl} aur ${rr} psi. Sab theek hai.`) };
+      }
       const time = new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
       return { state: s, reply: r(`It's ${time}.`, `Abhi ${time} ho rahe hain.`) };
     }
@@ -467,11 +564,11 @@ export function applyIntent(s: CarState, it: Intent): { state: CarState; reply: 
 
 const NEEDS_POWER = new Set<Intent['type']>([
   'climate.setTemp', 'climate.adjustTemp', 'climate.power', 'climate.fan', 'climate.auto', 'climate.recirc', 'climate.defrost',
-  'media.play', 'media.skip', 'media.volume', 'ambient.color', 'ambient.power', 'ambient.brightness',
-  'mood', 'nav.start', 'phone.call', 'screen', 'seat.vent',
+  'media.play', 'media.skip', 'media.volume', 'ambient.color', 'ambient.power', 'ambient.brightness', 'ambient.mode', 'ambient.hue',
+  'mood', 'nav.start', 'phone.call', 'screen', 'seat.vent', 'cluster.view',
 ]);
 
-export function runIntents(state: CarState, intents: Intent[], lang: Lang) {
+export function runIntents(state: CarState, intents: Intent[], lang: Lang, env: Env = { speed: 0 }) {
   let s = state;
   const replies: Reply[] = [];
   for (const it of intents) {
@@ -482,7 +579,7 @@ export function runIntents(state: CarState, intents: Intent[], lang: Lang) {
       s = wake.state;
       replies.push(wake.reply);
     }
-    const out = applyIntent(s, it);
+    const out = applyIntent(s, it, env);
     s = out.state;
     replies.push(out.reply);
   }

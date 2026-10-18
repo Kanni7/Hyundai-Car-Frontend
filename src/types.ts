@@ -2,10 +2,14 @@ export type Lang = 'en' | 'hi';
 export type Genre = 'lofi' | 'romantic' | 'party' | 'devotional' | 'retro';
 export type AmbientColor =
   | 'blue' | 'red' | 'green' | 'purple' | 'pink' | 'orange' | 'white' | 'yellow' | 'cyan' | 'gold';
+/** How the ambient light pipes behave, on top of their colour. */
+export type AmbientMode = 'static' | 'breathe' | 'flow' | 'music' | 'drive' | 'rainbow' | 'dual';
 export type DriveMode = 'eco' | 'normal' | 'sport';
-export type Page = 'home' | 'nav' | 'media' | 'climate' | 'phone' | 'vehicle';
+export type Page = 'home' | 'nav' | 'media' | 'climate' | 'lights' | 'phone' | 'vehicle';
 export type Zone = 'driver' | 'passenger' | 'both';
-export type Mood = 'party' | 'relax' | 'romantic' | 'focus';
+export type Mood = 'party' | 'relax' | 'romantic' | 'focus' | 'energy' | 'cozy';
+/** What the centre of the instrument cluster shows (cycled with the right spoke arrows). */
+export type ClusterView = 'drive' | 'trip' | 'tyres';
 export type WiperMode = 'off' | 'slow' | 'fast';
 export type SceneId = 'live' | 'night' | 'day';
 export type Gear = 'P' | 'R' | 'N' | 'D';
@@ -28,6 +32,9 @@ export type Intent =
   | { type: 'ambient.color'; color: AmbientColor }
   | { type: 'ambient.power'; on: boolean }
   | { type: 'ambient.brightness'; delta: number }
+  | { type: 'ambient.mode'; mode: AmbientMode; color2?: AmbientColor }
+  /** One of the 64 palette steps (0-63) of the custom colour wheel. */
+  | { type: 'ambient.hue'; hue: number }
   | { type: 'mood'; mood: Mood }
   | { type: 'wipers'; mode: WiperMode; rain?: boolean }
   | { type: 'window'; target: Zone; open: number }
@@ -49,7 +56,11 @@ export type Intent =
   | { type: 'doors.lock'; locked: boolean }
   | { type: 'autohold'; on?: boolean }
   | { type: 'screen'; page: Page }
-  | { type: 'query'; topic: 'temp' | 'fuel' | 'music' | 'time' }
+  | { type: 'cluster.view'; view?: ClusterView; dir?: 1 | -1 }
+  | { type: 'adas.lka'; on: boolean }
+  /** Smart Cruise Control: set speed in km/h, nudge it, or cancel. */
+  | { type: 'cruise'; on: boolean; speed?: number; delta?: number }
+  | { type: 'query'; topic: 'temp' | 'fuel' | 'music' | 'time' | 'speed' | 'tyres' }
   | { type: 'greet' }
   | { type: 'help' }
   | { type: 'thanks' };
@@ -58,7 +69,8 @@ export interface CarState {
   scene: SceneId;
   climate: { on: boolean; temp: number; fan: number; auto: boolean; recirc: boolean; defrost: boolean };
   media: { playing: boolean; radio: boolean; freq: number; genre: Genre; track: number; volume: number; muted: boolean };
-  ambient: { on: boolean; color: AmbientColor; brightness: number; party: boolean };
+  /** `hue` (0-63) overrides `color` when set; `color2` is the door colour in dual-tone mode. */
+  ambient: { on: boolean; color: AmbientColor; color2: AmbientColor; hue: number | null; brightness: number; mode: AmbientMode };
   wipers: WiperMode;
   windows: { driver: number; passenger: number };
   sunroof: boolean;
@@ -75,8 +87,13 @@ export interface CarState {
   locked: boolean;
   autoHold: boolean;
   screen: Page;
+  cluster: ClusterView;
+  /** Lane Keeping Assist and the Smart Cruise set speed (null = cruise off). */
+  adas: { lka: boolean; cruise: number | null };
   fuel: number;
   range: number;
+  /** Tyre pressures in psi: front left, front right, rear left, rear right. */
+  tyres: [number, number, number, number];
 }
 
 export interface Toast {

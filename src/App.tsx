@@ -25,13 +25,16 @@ const DEMO_SCRIPT = [
   'Garmi lag rahi hai',
   'Romantic gaane chalao',
   'Light gulabi kar do',
+  'Light ko music ke saath sync karo',
   'Volume thoda badhao',
   'Baarish ho rahi hai',
   'Ghar le chalo',
   'Gear D mein daalo aur right indicator do',
   'Sport mode on karo',
-  'Ek baar rev karo',
+  'Cruise 60 pe set karo',
+  'Tyre pressure kitna hai?',
   'Wiper band karo aur music band kar do',
+  'Cruise band karo',
 ];
 
 let nextId = 1;
@@ -66,7 +69,7 @@ export default function App() {
     window.setTimeout(() => {
       const parsed = parseCommand(text, nlu.current);
       nlu.current = parsed.context;
-      const out = runIntents(carRef.current, parsed.intents, parsed.lang);
+      const out = runIntents(carRef.current, parsed.intents, parsed.lang, { speed: engine.speed });
       commit(out.state);
       if (out.state.ignition === 'on' && parsed.intents.some((i) => i.type === 'rev')) engine.blip(1300);
       if (out.toast) setToast({ ...out.toast, id: nextId++ });
@@ -88,7 +91,7 @@ export default function App() {
   // Touch controls on the virtual screen and dashboard skip the voice round-trip.
   const handleIntent = useCallback((intent: Intent) => {
     carAudio.unlock();
-    const out = runIntents(carRef.current, [intent], 'en');
+    const out = runIntents(carRef.current, [intent], 'en', { speed: engine.speed });
     commit(out.state);
     if (out.toast && intent.type !== 'screen') setToast({ ...out.toast, id: nextId++ });
   }, [commit]);
@@ -102,20 +105,33 @@ export default function App() {
     speech.start(speechLang);
   }, [speech, speechLang]);
 
-  // Engine model follows the ignition and drive mode
+  // Engine and vehicle model follow the ignition, gear selector, drive mode, cruise and Auto Hold
   useEffect(() => { engine.setIgnition(car.ignition, car.driveMode === 'sport'); }, [car.ignition, car.driveMode]);
-
-  // Hold ↑ or W to rev (when not typing)
+  useEffect(() => { engine.setDrive(car.gear, car.driveMode); }, [car.gear, car.driveMode]);
+  useEffect(() => { engine.setCruise(car.adas.cruise); }, [car.adas.cruise]);
+  useEffect(() => { engine.autoHold = car.autoHold; }, [car.autoHold]);
+  // Touching the brake cancels Smart Cruise, as in the real car.
   useEffect(() => {
-    const isThrottle = (e: KeyboardEvent) => (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w')
-      && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement);
+    engine.onCruiseCancel = () => handleIntent({ type: 'cruise', on: false });
+    return () => { engine.onCruiseCancel = undefined; };
+  }, [handleIntent]);
+
+  // Hold ↑ or W to accelerate, ↓ or S to brake (when not typing)
+  useEffect(() => {
+    const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+    const isThrottle = (e: KeyboardEvent) => (e.key === 'ArrowUp' || e.key.toLowerCase() === 'w') && !typing(e);
+    const isBrake = (e: KeyboardEvent) => (e.key === 'ArrowDown' || e.key.toLowerCase() === 's') && !typing(e);
     const down = (e: KeyboardEvent) => {
-      if (!isThrottle(e) || e.repeat) return;
+      if (e.repeat || !(isThrottle(e) || isBrake(e))) return;
       e.preventDefault();
       carAudio.unlock();
-      engine.press();
+      if (isBrake(e)) engine.setBrake(true);
+      else engine.press();
     };
-    const up = (e: KeyboardEvent) => { if (isThrottle(e)) engine.release(); };
+    const up = (e: KeyboardEvent) => {
+      if (isThrottle(e)) engine.release();
+      if (isBrake(e)) engine.setBrake(false);
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
